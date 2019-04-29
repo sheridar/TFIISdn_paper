@@ -1,0 +1,279 @@
+---
+# title: "Figure 2"
+# author: "Ryan Sheridan"
+# date: "September 12, 2018"
+output: html_document
+---
+
+# **Figure 2**
+```{r "Setup: Load packages", include = F}
+
+# Functions
+source("~/Projects/TFIISdn_paper_old/src/funs.R")
+
+# Default chunk options
+knitr::opts_chunk$set(include = F, echo = F)
+
+# Column names
+col_names <- c(
+  "chrom", "start",
+  "end",   "name",
+  "score", "strand",
+  "symbol"
+)
+
+# Column names for region bed files
+region_cols <- c(col_names[1:6], "count") 
+
+# Column names for window bed files
+win_cols <- region_cols
+win_cols[5] <- "win_id"
+
+# Column names for bedGraph files
+bg_cols <- c(col_names[1:3], "count")
+
+```
+
+```{r "Setup: Import gene lists"}
+
+# ---- Gene lists ----
+
+gene_lists <- list(
+  sep_0k = str_c(gene_list_dir, "hg19_0ksep.bed"),
+  sep_1k = str_c(gene_list_dir, "hg19_1ksep.bed"),
+  sep_2k = str_c(gene_list_dir, "hg19_2ksep.bed"),
+  sep_5k = str_c(gene_list_dir, "hg19_5ksep.bed")
+) %>%
+map(read_tsv, col_names[1:6])
+
+genes <- str_c(gene_list_dir, "hg19_1klong.bed") %>%
+  read_tsv(col_names)
+
+
+# ---- Refseq gene annotation table ----
+
+ref_cols <- c(
+  "chrom",  "start", 
+  "end",    "name",
+  "score",  "strand", 
+  "chrom2", "start2",
+  "end2",   "name2",  
+  "y_min",  "y_max"
+)
+
+col_types <- cols(
+  .default = col_double(),
+  chrom = col_character(),
+  name = col_character(),
+  score = col_integer(),
+  strand = col_character(),
+  chrom2 = col_character(),
+  name2 = col_character()
+)
+
+gene_annotations <- read_tsv(
+  str_c(gene_list_dir, "gene_annotations.txt.gz"), 
+  col_names = ref_cols, 
+  col_types = col_types
+) %>%
+  filter(end2 - start2 > 0) %>%
+  nest(chrom2, start2, end2, name2, y_min, y_max) %>%
+  mutate(data = map(data, ~ {
+    .x %>%
+      dplyr::rename(
+        chrom = chrom2,
+        start = start2, 
+        end   = end2,
+        name  = name2
+      )
+  }))
+
+```
+
+```{r "A: Import bedGraphs"}
+
+polII_Ser2_TFIIS_bgs <- list(
+  "pol II, 1, Control,  black"   = get_path("polII_H2O_r1.full.N.bedGraph.gz",     "polII_ChIP"),
+  "pol II, 1, +TFIISDN, #327CD6" = get_path("polII_Dox_r1.full.N.bedGraph.gz",     "polII_ChIP"),
+  "Ser2-P, 2, Control,  black"   = get_path("Ser2_H2O_r1.full.N.bedGraph.gz",      "Ser2_ChIP"),
+  "Ser2-P, 2, +TFIISDN, #80379c" = get_path("Ser2_Dox_r1.full.N.bedGraph.gz",      "Ser2_ChIP"),
+  "TFIIS,  3, Control,  black"   = get_path("TFIISwt_avi_r1.full.SpN.bedGraph.gz", "HMLE_ChIP"),
+  "TFIIS,  3, +TFIISDN, #238443" = get_path("TFIISdn_avi_r1.full.SpN.bedGraph.gz", "HMLE_ChIP")
+) %>%
+  map(read_tsv, bg_cols)
+
+```
+
+```{r "A: Create genome browser tracks"}
+
+# Function to create 3' browser tracks
+create_pAS_tracks <- function(...) {
+  create_browser_tracks(
+    bg_list       = polII_Ser2_TFIIS_bgs,
+    left          = 2500,
+    right         = 5000,
+    overlay       = T,
+    v_line        = "pAS",
+    dist_scale    = c(1, 0.9),
+    track_heights = c(rep(1, 3), 0.3),
+    ...
+  )
+}
+
+# RPS26 browser tracks
+RPS26_browser <- create_pAS_tracks(
+  win_size   = 400,
+  step_size  = 390,
+  gene_name  = "NM_001029,RPS26$",
+  theme_opts = list(theme(legend.position = "none"))
+)
+
+# RPS8 browser tracks
+RPS8_browser <- create_pAS_tracks(
+  gene_name     = "RPS8",
+  win_size      = 200, 
+  step_size     = 190, 
+  overlap_genes = T,
+  theme_opts    = list(theme(
+    legend.position = c(1, 0.75),
+    axis.title.y    = element_text(color = "white")
+  ))
+)
+
+```
+
+```{r "B-E: Import 3' bed files"}
+
+# These bed files include 50bp windows for the region +/-5kb around the pAS
+
+wins_3 <- list(
+  # key name,       file name,                          directory name
+  c("polII_H2O_r1", "polII_H2O_r1.3.50bp.N.bed.gz",     "polII_ChIP"),
+  c("polII_Dox_r1", "polII_Dox_r1.3.50bp.N.bed.gz",     "polII_ChIP"),
+  c("polII_H2O_r2", "polII_H2O_r2.3.50bp.N.bed.gz",     "polII_ChIP"),
+  c("polII_Dox_r2", "polII_Dox_r2.3.50bp.N.bed.gz",     "polII_ChIP"),
+  c("polII_H2O_r3", "polII_H2O_r3.3.50bp.N.bed.gz",     "polII_ChIP"),
+  c("polII_Dox_r3", "polII_Dox_r3.3.50bp.N.bed.gz",     "polII_ChIP"),
+  c("Ser2_H2O_r1",  "Ser2_H2O_r1.3.50bp.N.bed.gz",      "Ser2_ChIP"),  
+  c("Ser2_Dox_r1",  "Ser2_Dox_r1.3.50bp.N.bed.gz",      "Ser2_ChIP"),  
+  c("NET_H2O_r1",   "NET_H2O_r1.3.50bp.S.N.bed.gz"),
+  c("NET_Dox_r1",   "NET_Dox_r1.3.50bp.S.N.bed.gz"),
+  c("NET_H2O_r2",   "NET_H2O_r2.3.50bp.S.N.bed.gz"),
+  c("NET_Dox_r2",   "NET_Dox_r2.3.50bp.S.N.bed.gz"),
+  c("avi_IISwt_r1", "TFIISwt_avi_r1.3.50bp.SpN.bed.gz", "HMLE_ChIP"),
+  c("avi_IISdn_r1", "TFIISdn_avi_r1.3.50bp.SpN.bed.gz", "HMLE_ChIP")
+) %>%
+  import_dfs(win_cols)
+
+```
+
+```{r "B-E: Calculate mean signal for 3' bed files"}
+
+# ---- Merge 3' bed files ----
+
+wins_3_merge <- wins_3 %>%
+  merge_wins(
+    win_num   = 200,
+    ref_win   = 101,
+    win_min   = 91
+  )
+
+
+# ---- Calculate mean signal ----
+
+# Genes >1 kb long and separated by >5 kb
+genes_5ksep_1klong <- gene_lists[["sep_5k"]] %>%
+  filter(end - start > 1000) %>%
+  dplyr::select(name)
+
+# Calculate mean signal
+wins_3_mean <- wins_3_merge %>%
+  calc_mean_signal(
+    gene_list  = genes_5ksep_1klong,
+    group_cols = c("type", "key", "rep"),
+    rel_freq   = F,
+    rep_mean   = T
+  )
+
+```
+
+```{r "B-E: Create 3' metaplots"}
+
+# Create 3' pol II ChIP-seq metaplots
+polII_3_plot <- wins_3_mean %>%
+  create_3_metaplots(
+    plot_title  = "pol II ChIP-seq",
+    plot_colors = get_color(c("black", "blue_4"))
+  )
+
+# Create 3' Ser2-P ChIP-seq metaplots
+Ser2_3_plot <- wins_3_mean %>%
+  create_3_metaplots(
+    plot_title  = "Ser2-P ChIP-seq",
+    plot_colors = get_color(c("black", "purple_3")),
+    plot_SEM    = F
+  )
+
+# Create 3' mNET-seq metaplots
+NET_3_plot <- wins_3_mean %>%
+  create_3_metaplots(
+    plot_title  = "mNET-seq",
+    plot_colors = get_color(c("black", "red_2")),
+    line_size   = 2.5
+  )
+
+TFIIS_3_plot <- wins_3_mean %>%
+  create_3_metaplots(
+    plot_title  = "avi_,TFIIS ChIP-seq",
+    plot_colors = get_color(c("black", "green_3")),
+    plot_levels = c("+TFIISWT", "+TFIISDN"),
+    line_size   = 2.5,
+    plot_SEM    = F
+  ) + 
+  labs(y = "Mean spike-in\nnormalized signal")
+
+```
+
+```{r "Arrange figure panels", include = T, fig.width = 11, fig.height = 9}
+
+# Arrange top panels
+fig_2_top <- plot_grid(
+  RPS26_browser, RPS8_browser,
+  rel_widths = c(50, 50),
+  ncol       = 3
+) +
+  theme(plot.margin = unit(c(0.2, 0.2, 0, 1.5), "cm"))
+
+# Arrange bottom panels
+fig_2_bottom <- list(
+  polII_3_plot, NET_3_plot,
+  Ser2_3_plot,  TFIIS_3_plot
+) %>%
+  map(~.x + theme(plot.margin = unit(c(0.2, 0.2, 0, 1.5), "cm"))) %>%
+  plot_grid(
+    plotlist   = .,
+    labels     = c("B", "D", "C", "E"),
+    label_size = 30,
+    rel_widths = rep(50, 4),
+    nrow       = 2,
+    align      = "v"
+  )
+
+# Generate final figure
+fig_2 <- plot_grid(
+  fig_2_top, fig_2_bottom,
+  labels     = "A",
+  label_size = 30,
+  nrow       = 2
+)
+
+fig_2
+
+```
+
+### Pol II RNA cleavage activity antagonizes termination at 3’ ends
+(A) Expression of TFIIS~DN~ causes early transcription termination. Note the early drop in Pol II, Ser2-P, and TFIIS ChIP signals at gene 3’ ends when TFIIS~DN~ is expressed. 
+(B) Metaplots of anti-pol II ChIP-seq signals (50 bp bins) for genes >1 kb long and separated by >5 kb. The mean signal was calculated for each individual replicate. The replicates were then averaged with the shaded region representing the SEM for three biological replicates. RPKM, reads per kb per million mapped reads.
+(C) Metaplots of anti-CTD Ser2-P pol II signals as in B for one biological replicate.
+(D) Metaplots of mNET-seq signals as in B for two biological replicates.
+(E) Metaplots of WT TFIIS and TFIIS~DN~ ChIP-seq signals (50 bp bins) normalized to a yeast spike-in as in Fig. 1F for genes shown in B.
